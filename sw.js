@@ -1,4 +1,4 @@
-const V = 'prieres-v11';
+const V = 'prieres-v14';
 const FICHIERS = ['./', './index.html', './manifest.json', './icon.svg', './icon-192.png', './icon-512.png', './icon-180.png'];
 self.addEventListener('install', e => { e.waitUntil(caches.open(V).then(c => c.addAll(FICHIERS))); self.skipWaiting(); });
 self.addEventListener('activate', e => {

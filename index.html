@@ -40,9 +40,9 @@ h1{font-size:1.1rem;margin:18px 0 2px;letter-spacing:.02em}
 .chk{display:flex;align-items:center;margin:0;padding:6px;cursor:pointer}
 .chk input{width:22px;height:22px;padding:0;margin:0;accent-color:var(--acc);cursor:pointer}
 .chk.vide{visibility:hidden;cursor:default}
-.ban{position:fixed;left:12px;right:12px;top:calc(10px + env(safe-area-inset-top));z-index:9;max-width:496px;margin:0 auto;background:var(--gold);color:#1b1500;border-radius:14px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;box-shadow:0 6px 24px #0005;font-weight:600}
+.ban{position:fixed;left:12px;right:12px;top:calc(10px + env(safe-area-inset-top));z-index:9;max-width:496px;margin:0 auto;background:var(--acc);color:#fff;border:1px solid var(--gold);border-radius:14px;padding:12px 14px;display:flex;align-items:center;justify-content:space-between;gap:12px;box-shadow:0 6px 24px #0005;font-weight:600}
 .ban[hidden]{display:none}
-.ban button{width:auto;background:#1b1500;color:#fff;border:0;border-radius:10px;padding:9px 14px;font:inherit;font-weight:600;cursor:pointer}
+.ban button{width:auto;background:#fff;color:var(--acc);border:0;border-radius:10px;padding:9px 14px;font:inherit;font-weight:600;cursor:pointer}
 input[type=range]{padding:0;accent-color:var(--acc)}
 .nav{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
 .nav button{background:none;border:1px solid var(--line);color:var(--ink);border-radius:10px;width:40px;height:40px;font-size:1.1rem;cursor:pointer}
@@ -106,7 +106,7 @@ footer{text-align:center;color:var(--mut);font-size:.75rem;margin-top:18px}
     <label>Muezzin pour chaque prière</label>
     <div id="adhanPar"></div>
     <p class="msg" id="adhanCredit"></p>
-    <button class="b sec" id="essaiHeure" style="margin-top:10px">Essai : faire comme si c'était l'heure de la prochaine prière, dans 15 secondes</button>
+    <button class="b sec" id="essaiHeure" style="margin-top:10px">Essai : faire comme si c'était l'heure de la prochaine prière, dans 5 secondes</button>
     <p class="msg" id="essaiMsg"></p>
   </section>
 
@@ -388,12 +388,13 @@ function jouerAdhan(k, libelle) {
   arreter();
   const idChoisi = (adhanPar[k] && ADHANS.some(a => a.id === adhanPar[k])) ? adhanPar[k] : adhanId;
   const choisi = ADHANS.find(a => a.id === idChoisi) || ADHANS[0];
-  const sources = [choisi.f];
+  const parDefaut = ADHANS.find(a => a.id === adhanId) || ADHANS[0];
+  const sources = choisi.f === parDefaut.f ? [choisi.f] : [choisi.f, parDefaut.f];
   bandeau(libelle);
   const essayer = i => {
-    if (i >= sources.length) { carillon(); return; }
+    if (i >= sources.length) { audio = null; return; } // plus de carillon (cloches) : le message reste affiché
     // on réutilise le lecteur « débloqué » par un toucher de l'écran (obligatoire sur iPhone et Android)
-    const a = lecteur || new Audio(); a.src = sources[i]; a.currentTime = 0; a.volume = vol; audio = a;
+    const a = lecteur || new Audio(); a.muted = false; a.src = sources[i]; a.volume = vol; audio = a;
     let passe = false;
     const suite = () => { if (passe || audio !== a) return; passe = true; essayer(i + 1); };
     a.onerror = suite;
@@ -404,23 +405,29 @@ function jouerAdhan(k, libelle) {
 }
 /* Le téléphone n'accepte de jouer un son tout seul qu'après un premier toucher de l'écran :
    au premier toucher, on « débloque » un lecteur audio qui servira ensuite pour chaque adhan. */
-const SILENCE = 'data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEARKwAAIhYAQACABAAZGF0YQAAAAA=';
-let lecteur = null, sonDebloque = false;
+let lecteur = null, sonDebloque = false, deblocageEnCours = false;
+/* Débloque le son au premier toucher : on joue le début d'un adhan en muet, puis on l'arrête.
+   Ne touche JAMAIS au lecteur pendant qu'un adhan joue (sinon un toucher coupait l'adhan). */
+let avisVu = false;
 function debloquerSon() {
-  if (sonDebloque) return;
+  // le premier toucher suffit : l'avis jaune disparaît tout de suite
+  if (!avisVu) { avisVu = true; const av = $('avisSon'); if (av) av.hidden = true; }
+  try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); if (actx.state === 'suspended') actx.resume(); } catch (e) {}
+  if (sonDebloque || deblocageEnCours || audio) return;
   try {
     lecteur = lecteur || new Audio();
-    lecteur.src = SILENCE;
+    deblocageEnCours = true;
+    lecteur.muted = true;
+    lecteur.src = (ADHANS.find(a => a.id === adhanId) || ADHANS[0]).f;
+    const fini = ok => { deblocageEnCours = false; try { lecteur.pause(); } catch (e) {} lecteur.muted = false; if (ok) { sonDebloque = true; majAvisSon(); } };
     const p = lecteur.play();
-    if (p && p.then) p.then(() => { sonDebloque = true; majAvisSon(); }).catch(() => {});
-    else { sonDebloque = true; majAvisSon(); }
-  } catch (e) {}
-  try { actx = actx || new (window.AudioContext || window.webkitAudioContext)(); actx.resume(); } catch (e) {}
+    if (p && p.then) p.then(() => fini(true)).catch(() => fini(false)); else fini(true);
+  } catch (e) { deblocageEnCours = false; }
 }
 ['pointerdown', 'touchend', 'click', 'keydown'].forEach(ev => document.addEventListener(ev, debloquerSon, { capture: true, passive: true }));
 function majAvisSon() {
   const avis = $('avisSon');
-  if (avis) avis.hidden = sonDebloque || !Object.values(alarmes).some(Boolean);
+  if (avis) avis.hidden = avisVu || sonDebloque || !Object.values(alarmes).some(Boolean);
 }
 /* Case décochée : pas de son, mais une vibration (téléphones Android ; l'iPhone et les ordinateurs n'ont pas de vibration pour les pages web) */
 function vibrer(k) {
@@ -461,14 +468,14 @@ $('liste').addEventListener('change', e => {
 });
 $('vol').oninput = e => { vol = +e.target.value; save('vol', vol); if (audio) audio.volume = vol; };
 $('stop').onclick = arreter;
-/* Bouton d'essai : simule l'heure de la prochaine prière 15 s plus tard (case cochée = adhan, décochée = vibration) */
+/* Bouton d'essai : simule l'heure de la prochaine prière 5 s plus tard (case cochée = adhan, décochée = vibration) */
 let essaiMinuterie = null;
 $('essaiHeure').onclick = () => {
   debloquerSon();
   clearInterval(essaiMinuterie);
   const k = (window._next && window._next.k) || 'dhuhr';
   const nom = NOMS.find(x => x[0] === k)[1];
-  let reste = 15;
+  let reste = 5;
   const maj = () => { $('essaiMsg').textContent = `${nom} : ${alarmes[k] ? 'adhan' : 'vibration'} dans ${reste} s… (laissez l'app ouverte)`; };
   maj();
   essaiMinuterie = setInterval(() => {
