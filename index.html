@@ -106,6 +106,8 @@ footer{text-align:center;color:var(--mut);font-size:.75rem;margin-top:18px}
     <label>Muezzin pour chaque prière</label>
     <div id="adhanPar"></div>
     <p class="msg" id="adhanCredit"></p>
+    <button class="b sec" id="essaiHeure" style="margin-top:10px">Essai : faire comme si c'était l'heure de la prochaine prière, dans 15 secondes</button>
+    <p class="msg" id="essaiMsg"></p>
   </section>
 
   <section class="card">
@@ -459,6 +461,24 @@ $('liste').addEventListener('change', e => {
 });
 $('vol').oninput = e => { vol = +e.target.value; save('vol', vol); if (audio) audio.volume = vol; };
 $('stop').onclick = arreter;
+/* Bouton d'essai : simule l'heure de la prochaine prière 15 s plus tard (case cochée = adhan, décochée = vibration) */
+let essaiMinuterie = null;
+$('essaiHeure').onclick = () => {
+  debloquerSon();
+  clearInterval(essaiMinuterie);
+  const k = (window._next && window._next.k) || 'dhuhr';
+  const nom = NOMS.find(x => x[0] === k)[1];
+  let reste = 15;
+  const maj = () => { $('essaiMsg').textContent = `${nom} : ${alarmes[k] ? 'adhan' : 'vibration'} dans ${reste} s… (laissez l'app ouverte)`; };
+  maj();
+  essaiMinuterie = setInterval(() => {
+    reste--;
+    if (reste > 0) return maj();
+    clearInterval(essaiMinuterie);
+    $('essaiMsg').textContent = '';
+    if (alarmes[k]) alerte(k); else vibrer(k);
+  }, 1000);
+};
 majAvisSon();
 
 /* Choix de l'adhan : les 12 enregistrements mp3 fournis par Karim (voir CREDITS-AUDIO.md) */
